@@ -1,12 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
+	"mime/multipart"
 	"net/http"
+	"os"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
@@ -43,6 +47,8 @@ var (
 	ch    *amqp.Channel
 	queue amqp.Queue
 )
+
+const path_to_store = "../store"
 
 func failOnError(err error, msg string) {
 	if err != nil {
@@ -153,6 +159,39 @@ func getPlayerStats(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(r.Host + "/players/" + playerID + "/stats/" + msg.Filename))
 }
 
+func getPdf(w http.ResponseWriter, r *http.Request) {
+	playerID := mux.Vars(r)["id"]
+	filename := mux.Vars(r)["filename"]
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	defer writer.Close()
+	fw, err := writer.CreateFormFile("pdf", filename)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		log.Println(err)
+		return
+	}
+
+	file, err := os.Open(path_to_store + "/pdfs/" + playerID + "/" + filename)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		log.Println(err)
+		return
+	}
+
+	_, err = io.Copy(fw, file)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		log.Println(err)
+		return
+	}
+
+	w.Header().Add("Content-Type", writer.FormDataContentType())
+	w.Write(body.Bytes())
+	w.WriteHeader(http.StatusOK)
+}
+
 func main() {
 	db = connectToBD()
 	defer db.Close()
@@ -182,7 +221,7 @@ func main() {
 	router.HandleFunc("/players/{id}", getOnePlayer).Methods("GET")
 	router.HandleFunc("/players/{id}/stats", updatePlayerStats).Methods("PUT")
 	router.HandleFunc("/players/{id}/stats", getPlayerStats).Methods("GET")
-	router.HandleFunc("/players/{id}/stats/{filename}", getPlayerStats).Methods("GET")
+	router.HandleFunc("/players/{id}/stats/{filename}", getPdf).Methods("GET")
 
 	log.Fatal(http.ListenAndServe(":8080", router))
 }
