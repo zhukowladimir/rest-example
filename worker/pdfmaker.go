@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"errors"
 	"io"
 	"log"
@@ -43,7 +45,7 @@ func getImg(url string) (string, error) {
 	return path, nil
 }
 
-func createPdf(msg *QueueMsg) error {
+func createPdf(msg *QueueMsg) ([]byte, error) {
 	pdf := fpdf.New("P", "mm", "A4", "")
 	pdf.AddPage()
 
@@ -130,10 +132,12 @@ func createPdf(msg *QueueMsg) error {
 		os.MkdirAll(path, os.ModePerm)
 	}
 
-	err := pdf.OutputFileAndClose(path + "/" + msg.Filename)
+	var b bytes.Buffer
+	writer := bufio.NewWriter(&b)
+	err := pdf.Output(writer)
 	if err != nil {
-		return err
+		return []byte{}, err
 	}
 
-	return nil
+	return b.Bytes(), nil
 }

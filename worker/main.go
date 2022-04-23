@@ -37,7 +37,7 @@ func main() {
 	failOnError(err, "Failed to open a channel")
 	defer ch.Close()
 
-	q, err := ch.QueueDeclare(
+	wq, err := ch.QueueDeclare(
 		"work_queue",
 		false,
 		false,
@@ -47,8 +47,18 @@ func main() {
 	)
 	failOnError(err, "Failed to declare a queue")
 
+	rq, err := ch.QueueDeclare(
+		"reply_queue",
+		false,
+		false,
+		false,
+		false,
+		nil,
+	)
+	failOnError(err, "Failed to declare a queue")
+
 	msgs, err := ch.Consume(
-		q.Name,
+		wq.Name,
 		"",
 		true,
 		false,
@@ -67,10 +77,25 @@ func main() {
 			qMsg := QueueMsg{}
 			json.Unmarshal(d.Body, &qMsg)
 			timer := time.Now()
-			err = createPdf(&qMsg)
+			pdfBytes, err := createPdf(&qMsg)
 			if err != nil {
 				log.Println("[o] Error:", err.Error())
 			}
+
+			err = ch.Publish(
+				"",
+				rq.Name,
+				false,
+				false,
+				amqp.Publishing{
+					DeliveryMode:  amqp.Persistent,
+					ContentType:   "text/plain",
+					CorrelationId: d.CorrelationId,
+					MessageId:     d.MessageId,
+					Body:          []byte(pdfBytes),
+				},
+			)
+			failOnError(err, "Failed to publish a message")
 
 			log.Println(" [+] Done with", time.Since(timer).Seconds())
 		}

@@ -43,12 +43,16 @@ type QueueMsg struct {
 }
 
 var (
-	db    *sql.DB
-	ch    *amqp.Channel
-	queue amqp.Queue
+	db     *sql.DB
+	ch     *amqp.Channel
+	wQueue amqp.Queue
+	rQueue amqp.Queue
+	corrId string
 )
 
-const path_to_store = "../store"
+const (
+	path_to_store = "../store"
+)
 
 func failOnError(err error, msg string) {
 	if err != nil {
@@ -143,13 +147,16 @@ func getPlayerStats(w http.ResponseWriter, r *http.Request) {
 
 	err = ch.Publish(
 		"",
-		queue.Name,
+		wQueue.Name,
 		false,
 		false,
 		amqp.Publishing{
-			DeliveryMode: amqp.Persistent,
-			ContentType:  "text/plain",
-			Body:         []byte(body),
+			DeliveryMode:  amqp.Persistent,
+			ContentType:   "text/plain",
+			CorrelationId: corrId,
+			MessageId:     playerID + "/" + msg.Filename,
+			ReplyTo:       rQueue.Name,
+			Body:          []byte(body),
 		},
 	)
 	failOnError(err, "Failed to publish a message")
@@ -204,7 +211,9 @@ func main() {
 	failOnError(err, "Failed to open a channel")
 	defer ch.Close()
 
-	queue, err = ch.QueueDeclare(
+	corrId = uuid.New().String()
+
+	wQueue, err = ch.QueueDeclare(
 		"work_queue",
 		false,
 		false,
@@ -212,16 +221,53 @@ func main() {
 		false,
 		nil,
 	)
-	failOnError(err, "Failed to declare a queue")
+	failOnError(err, "Failed to declare a wQueue")
+
+	rQueue, err = ch.QueueDeclare(
+		"reply_queue",
+		false,
+		false,
+		false,
+		false,
+		nil,
+	)
+	failOnError(err, "Failed to declare a wQueue")
+
+	msgs, err := ch.Consume(
+		rQueue.Name,
+		"",
+		true,
+		false,
+		false,
+		false,
+		nil,
+	)
+	failOnError(err, "Failed to reguster a consumer")
+
+	go func() {
+		for d := range msgs {
+			if d.CorrelationId == corrId {
+				err = ioutil.WriteFile(path_to_store+"/pdfs/"+d.MessageId, d.Body, 0666)
+				if err != nil {
+					log.Println("Failed to write pdf: ", err.Error())
+				}
+
+			}
+		}
+	}()
 
 	router := mux.NewRouter().StrictSlash(true)
 
 	router.HandleFunc("/players", addPlayer).Methods("POST")
 	router.HandleFunc("/players", getAllPlayers).Methods("GET")
 	router.HandleFunc("/players/{id}", getOnePlayer).Methods("GET")
+
 	router.HandleFunc("/players/{id}/stats", updatePlayerStats).Methods("PUT")
 	router.HandleFunc("/players/{id}/stats", getPlayerStats).Methods("GET")
 	router.HandleFunc("/players/{id}/stats/{filename}", getPdf).Methods("GET")
+
+	// router.HandleFunc("/auth/sign-up", signUpPlayer).Methods("POST")
+	// router.HandleFunc("/auth/login", loginPlayer).Methods("POST")
 
 	log.Fatal(http.ListenAndServe(":8080", router))
 }
