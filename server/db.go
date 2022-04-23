@@ -128,6 +128,58 @@ func dbGetAllPlayers(db *sql.DB) (*[]Player, error) {
 	return &players, nil
 }
 
+func dbRemakeOnePlayer(db *sql.DB, p *Player) (*Player, error) {
+	sqlRequest := "UPDATE players SET username = $1, avatar = $2, sex = $3, email = $4 WHERE id = $5"
+
+	old, err := dbGetOnePlayer(db, p.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	if p.Avatar != "" {
+		old.Avatar = p.Avatar
+	}
+	if p.Username != "" {
+		old.Username = p.Username
+	}
+	if p.Sex != "" {
+		old.Sex = p.Sex
+	}
+	if p.Avatar != "" {
+		old.Email = p.Email
+	}
+
+	_, err = db.Exec(sqlRequest,
+		old.Username,
+		old.Avatar,
+		old.Sex,
+		old.Email,
+		old.ID,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return old, nil
+}
+
+func dbDeleteOnePlayer(db *sql.DB, id string) error {
+	sqlRequests := []string{
+		"DELETE FROM stats WHERE id = (SELECT id FROM stats INNER JOIN pid_sid ON pid_sid.sid = stats.id WHERE pid_sid.pid = $1)",
+		"DELETE FROM pid_sid WHERE pid = $1",
+		"DELETE FROM players WHERE id = $1",
+	}
+
+	for _, sqlRequest := range sqlRequests {
+		_, err := db.Exec(sqlRequest, id)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func dbUpdatePlayerStats(db *sql.DB, gameStats *GameStats, playerID string) error {
 	var sqlRequest string
 	if gameStats.IsWin {

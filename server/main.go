@@ -106,6 +106,40 @@ func getOnePlayer(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(player)
 }
 
+func remakeOnePlayer(w http.ResponseWriter, r *http.Request) {
+	playerID := mux.Vars(r)["id"]
+
+	newPlayer := Player{ID: playerID}
+	reqBody, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		fmt.Fprintf(w, "Some shit happens while reading request body")
+	}
+
+	json.Unmarshal(reqBody, &newPlayer)
+
+	p, err := dbRemakeOnePlayer(db, &newPlayer)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		log.Println(err)
+		return
+	}
+
+	json.NewEncoder(w).Encode(p)
+	w.WriteHeader(http.StatusOK)
+}
+
+func deleteOnePlayer(w http.ResponseWriter, r *http.Request) {
+	playerID := mux.Vars(r)["id"]
+
+	err := dbDeleteOnePlayer(db, playerID)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		log.Println(err)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
 func updatePlayerStats(w http.ResponseWriter, r *http.Request) {
 	playerID := mux.Vars(r)["id"]
 
@@ -261,6 +295,8 @@ func main() {
 	router.HandleFunc("/players", addPlayer).Methods("POST")
 	router.HandleFunc("/players", getAllPlayers).Methods("GET")
 	router.HandleFunc("/players/{id}", getOnePlayer).Methods("GET")
+	router.HandleFunc("/players/{id}", remakeOnePlayer).Methods("PUT")
+	router.HandleFunc("/players/{id}", deleteOnePlayer).Methods("DELETE")
 
 	router.HandleFunc("/players/{id}/stats", updatePlayerStats).Methods("PUT")
 	router.HandleFunc("/players/{id}/stats", getPlayerStats).Methods("GET")
