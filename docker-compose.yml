@@ -1,0 +1,29 @@
+version: "3"
+
+services:
+  rabbitmq:
+    image: rabbitmq:3.9-management
+    hostname: "rabbitmq"
+    ports:
+      - "15672:15672"
+      - "5672:5672"
+    network_mode: "host"
+  worker1:
+    build:
+      context: worker
+    ports:
+      - "8888:8888"
+    network_mode: "host"
+  worker2:
+    build:
+      context: worker
+    ports:
+      - "8889:8889"
+    network_mode: "host"
+  server:
+    build:
+      context: .
+      dockerfile: ./server/Dockerfile
+    ports:
+      - "8080:8080"
+    network_mode: "host"
